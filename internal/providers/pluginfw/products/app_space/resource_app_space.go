@@ -35,6 +35,7 @@ import (
 const resourceName = "app_space"
 
 var _ resource.ResourceWithConfigure = &SpaceResource{}
+var _ resource.ResourceWithModifyPlan = &SpaceResource{}
 
 func ResourceSpace() resource.Resource {
 	return &SpaceResource{}
@@ -51,10 +52,10 @@ type ProviderConfig struct {
 
 // ApplySchemaCustomizations applies the schema customizations to the ProviderConfig type.
 func (r ProviderConfig) ApplySchemaCustomizations(attrs map[string]tfschema.AttributeBuilder) map[string]tfschema.AttributeBuilder {
-	attrs["workspace_id"] = attrs["workspace_id"].SetRequired()
+	attrs["workspace_id"] = attrs["workspace_id"].SetOptional()
+	attrs["workspace_id"] = attrs["workspace_id"].SetComputed()
 	attrs["workspace_id"] = attrs["workspace_id"].(tfschema.StringAttributeBuilder).AddPlanModifier(
 		stringplanmodifier.RequiresReplaceIf(ProviderConfigWorkspaceIDPlanModifier, "", ""))
-
 	attrs["workspace_id"] = attrs["workspace_id"].(tfschema.StringAttributeBuilder).AddValidator(stringvalidator.LengthAtLeast(1))
 	attrs["workspace_id"] = attrs["workspace_id"].(tfschema.StringAttributeBuilder).AddValidator(
 		stringvalidator.RegexMatches(regexp.MustCompile(`^[1-9]\d*$`), "workspace_id must be a positive integer without leading zeros"))
@@ -318,6 +319,8 @@ func (m Space) ApplySchemaCustomizations(attrs map[string]tfschema.AttributeBuil
 
 	attrs["name"] = attrs["name"].(tfschema.StringAttributeBuilder).AddPlanModifier(stringplanmodifier.UseStateForUnknown()).(tfschema.AttributeBuilder)
 	attrs["provider_config"] = attrs["provider_config"].SetOptional()
+	attrs["provider_config"] = attrs["provider_config"].SetComputed()
+	attrs["provider_config"] = attrs["provider_config"].(tfschema.SingleNestedAttributeBuilder).AddPlanModifier(tfschema.ProviderConfigPlanModifier{})
 
 	return attrs
 }
@@ -442,6 +445,21 @@ func (r *SpaceResource) Configure(ctx context.Context, req resource.ConfigureReq
 	r.Client = autogen.ConfigureResource(req, resp)
 }
 
+func (r *SpaceResource) ModifyPlan(ctx context.Context, req resource.ModifyPlanRequest, resp *resource.ModifyPlanResponse) {
+	// Skip entirely on destroy (no plan state).
+	if req.Plan.Raw.IsNull() {
+		return
+	}
+	if r.Client == nil {
+		return
+	}
+	tfschema.WorkspaceDriftDetection(ctx, r.Client, req, resp)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	tfschema.ValidateWorkspaceID(ctx, r.Client, req, resp)
+}
+
 func (r *SpaceResource) Create(ctx context.Context, req resource.CreateRequest, resp *resource.CreateResponse) {
 	ctx = pluginfwcontext.SetUserAgentInResourceContext(ctx, resourceName)
 
@@ -502,6 +520,7 @@ func (r *SpaceResource) Create(ctx context.Context, req resource.CreateRequest, 
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	resp.Diagnostics.Append(tfschema.PopulateProviderConfigInState(ctx, r.Client, plan.ProviderConfig, &resp.State)...)
 }
 
 func (r *SpaceResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
@@ -553,6 +572,10 @@ func (r *SpaceResource) Read(ctx context.Context, req resource.ReadRequest, resp
 	newState.SyncFieldsDuringRead(ctx, existingState)
 
 	resp.Diagnostics.Append(resp.State.Set(ctx, newState)...)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	resp.Diagnostics.Append(tfschema.PopulateProviderConfigInState(ctx, r.Client, existingState.ProviderConfig, &resp.State)...)
 }
 
 func (r *SpaceResource) update(ctx context.Context, plan Space, diags *diag.Diagnostics, state *tfsdk.State) {
