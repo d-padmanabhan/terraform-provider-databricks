@@ -34,6 +34,7 @@ const resourceName = "alert_v2"
 
 var _ resource.ResourceWithConfigure = &AlertV2Resource{}
 var _ resource.ResourceWithModifyPlan = &AlertV2Resource{}
+var _ resource.ResourceWithModifyPlan = &AlertV2Resource{}
 
 func ResourceAlertV2() resource.Resource {
 	return &AlertV2Resource{}
@@ -262,6 +263,9 @@ func (to *AlertV2) SyncFieldsDuringCreateOrUpdate(ctx context.Context, from Aler
 	if !from.PurgeOnDelete.IsUnknown() {
 		to.PurgeOnDelete = from.PurgeOnDelete
 	}
+	if !from.PurgeOnDelete.IsUnknown() {
+		to.PurgeOnDelete = from.PurgeOnDelete
+	}
 	if !from.RunAs.IsNull() && !from.RunAs.IsUnknown() {
 		if toRunAs, ok := to.GetRunAs(ctx); ok {
 			if fromRunAs, ok := from.GetRunAs(ctx); ok {
@@ -303,6 +307,9 @@ func (to *AlertV2) SyncFieldsDuringRead(ctx context.Context, from AlertV2) {
 				to.SetEvaluation(ctx, toEvaluation)
 			}
 		}
+	}
+	if !from.PurgeOnDelete.IsUnknown() {
+		to.PurgeOnDelete = from.PurgeOnDelete
 	}
 	if !from.PurgeOnDelete.IsUnknown() {
 		to.PurgeOnDelete = from.PurgeOnDelete
